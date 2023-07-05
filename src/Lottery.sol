@@ -2,10 +2,10 @@
 pragma solidity ^0.8.7;
 
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/security/ReentrancyGuard.sol";
+import "@openzeppelin/utils/Strings.sol";
+import "@openzeppelin/access/Ownable.sol";
+import "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 
 contract Lottery is Ownable, ReentrancyGuard {
     error OnlyCoordinatorCanFulfill(address have, address want);
