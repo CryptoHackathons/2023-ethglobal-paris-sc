@@ -1,0 +1,208 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.7;
+
+import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+contract Lottery is Ownable, ReentrancyGuard {
+    error OnlyCoordinatorCanFulfill(address have, address want);
+
+    struct RequestStatus {
+        bool fulfilled; // whether the request has been successfully fulfilled
+        bool exists; // whether a requestId exists
+        uint[] randomWords;
+    }
+
+    struct CryptoLotteryState {
+        bytes32 merkkleRoot;
+        uint drawerAmount;
+        address tokenAddress;
+        uint amount;
+        uint finalWinnerNumber; // final winner number 
+    }
+
+    struct NftLotteryState {
+        bytes32 merkkleRoot;
+        address tokenAddress;
+        uint tokenId;
+        uint finalWinnerNumber; // final winner number 
+    }
+
+    mapping(uint => CryptoLotteryState) public cryptoLotteryStates; // game ID => game info
+    uint public cryptoLotteryCount = 0;
+    mapping(uint => uint) public requestIdToGameId; // request ID => game ID
+    mapping(uint => uint) public gameIdToRequestId; // game ID => request ID
+    mapping(uint => RequestStatus) public s_requests; 
+
+    IERC20 private immutable receiveToken;
+
+    // VRF variable
+    address public vrfCoordinator;
+    VRFCoordinatorV2Interface COORDINATOR;
+    uint64 s_subscriptionId;
+    uint[] public requestIds;
+    uint public lastRequestId;
+    bytes32 keyHash;
+    uint32 callbackGasLimit = 2500000; // max callback gas limit 
+    uint16 requestConfirmations = 3;
+    // can customize request id 
+    uint64 public constant TRANSFER_REQUEST_ID = 1;
+
+    constructor(
+        address _vrfCoordinator, 
+        bytes32 _keyHash, 
+        uint64 _subscriptionId,
+        IERC20 _receiveToken
+    )
+    {
+        vrfCoordinator = _vrfCoordinator;
+        COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
+        keyHash = _keyHash;
+        s_subscriptionId = _subscriptionId;
+        receiveToken = _receiveToken;
+    }
+
+    /***************************/
+    /****  Admin Functions  ****/
+    /***************************/
+
+    function listLottery(
+        uint priceInUsdt,
+        address tokenAddress,
+        uint amount
+    ) external {
+        cryptoLotteryCount++;
+        cryptoLotteryStates[cryptoLotteryCount] = CryptoLotteryState(
+            bytes32(0),
+            0,
+            tokenAddress,
+            amount,
+            0
+        );
+        IERC20(tokenAddress).transferFrom(msg.sender, address(this), amount);
+    }
+
+    function closeLotteryAndCallChainlinkCoordinator(
+        uint lotteryId,
+        uint amount
+    ) external {
+        uint requestId = requestRandomWords(1);
+        requestIdToGameId[requestId] = lotteryId;
+        gameIdToRequestId[lotteryId] = requestId;
+        cryptoLotteryStates[lotteryId].drawerAmount = amount;
+    }
+
+    /****************************/
+    /****  Drawer Functions  ****/
+    /****************************/
+
+    function verifyList(uint lotteryId, address drawer, bytes32[] memory proof)
+        external 
+        returns (bool)
+    {
+        bytes32 lotteryHash = cryptoLotteryStates[lotteryId].merkkleRoot;
+        bytes32 user = keccak256(abi.encodePacked(drawer));
+        bytes32 computedHash = user;
+
+        for (uint256 i = 0; i < proof.length; i++) {
+            bytes32 proofElement = proof[i];
+
+            if (computedHash <= proofElement) {
+                computedHash = keccak256(
+                    abi.encodePacked(computedHash, proofElement)
+                );
+            } else {
+                computedHash = keccak256(
+                    abi.encodePacked(proofElement, computedHash)
+                );
+            }
+        }
+        return computedHash == lotteryHash;
+    }
+
+    /****************************/
+    /***  Internal Functions  ***/
+    /****************************/
+
+    function requestRandomWords(uint8 numWords)
+        internal
+        returns (uint requestId)
+    {
+        requestId = COORDINATOR.requestRandomWords(
+            keyHash,
+            s_subscriptionId,
+            requestConfirmations,
+            callbackGasLimit,
+            numWords
+        );
+        s_requests[requestId] = RequestStatus({
+            randomWords: new uint[](0),
+            exists: true,
+            fulfilled: false
+        });
+        requestIds.push(requestId);
+        lastRequestId = requestId;
+        return requestId;
+    }
+
+    function fulfillRandomWords(
+        uint _requestId,
+        uint[] memory _randomWords
+    ) internal {
+        require(s_requests[_requestId].exists, "request not found");
+        s_requests[_requestId].fulfilled = true;
+        s_requests[_requestId].randomWords = _randomWords;
+        uint count = cryptoLotteryStates[requestIdToGameId[_requestId]].drawerAmount;
+        cryptoLotteryStates[requestIdToGameId[_requestId]].finalWinnerNumber = 
+            _randomWords[0] % count;
+    }
+
+    /**************************/
+    /***  Status Functions  ***/
+    /**************************/
+
+    function getRequestStatus(
+        uint _requestId
+    ) external view returns (bool fulfilled, uint[] memory randomWords) {
+        require(s_requests[_requestId].exists, "Request not found");
+        RequestStatus memory request = s_requests[_requestId];
+        return (request.fulfilled, request.randomWords);
+    }
+
+    // function getGameFinalWinnerAddress (uint gameId) external view returns (address) {
+    //     GameState memory gameState = idToGameState[gameId];
+    //     require(s_requests[gameIdToRequestId[gameId]].exists, "Request not found");
+    //     require(
+    //         gameState.status == Status.DrawFinalNumber, 
+    //         "Final number not draw yet"
+    //     );
+    //     return gameState.playerList[gameState.finalWinningNumber];
+    // }
+
+    // function getGamePlayerList (uint gameId) external view returns (address[] memory) {
+    //     return idToGameState[gameId].playerList;
+    // }
+
+    function getBlocktime () external view returns (uint) {
+        return block.timestamp;
+    }
+
+    /***************************/
+    /***  Utility Functions  ***/
+    /***************************/
+    
+    function getReceiveToken() external onlyOwner {
+        uint balanceOfReceiveToken = receiveToken.balanceOf(address(this));
+        receiveToken.transferFrom(address(this), msg.sender, balanceOfReceiveToken);
+    }
+
+    function rawFulfillRandomWords(uint256 requestId, uint256[] memory randomWords) external {
+        if (msg.sender != vrfCoordinator) {
+        revert OnlyCoordinatorCanFulfill(msg.sender, vrfCoordinator);
+        }
+        fulfillRandomWords(requestId, randomWords);
+    }
+}
