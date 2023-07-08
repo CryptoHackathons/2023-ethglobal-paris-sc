@@ -6,6 +6,7 @@ import "@openzeppelin/security/ReentrancyGuard.sol";
 import "@openzeppelin/utils/Strings.sol";
 import "@openzeppelin/access/Ownable.sol";
 import "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/utils/cryptography/MerkleProof.sol";
 
 contract Lottery is Ownable, ReentrancyGuard {
     error OnlyCoordinatorCanFulfill(address have, address want);
@@ -17,27 +18,28 @@ contract Lottery is Ownable, ReentrancyGuard {
     }
 
     struct CryptoLotteryState {
+        address lotteryOwner;
         bytes32 merkkleRoot;
         uint drawerAmount;
         address tokenAddress;
         uint amount;
-        uint finalWinnerNumber; // final winner number 
+        uint finalWinnerNumber; // final winner number
     }
 
     struct NftLotteryState {
         bytes32 merkkleRoot;
         address tokenAddress;
         uint tokenId;
-        uint finalWinnerNumber; // final winner number 
+        uint finalWinnerNumber; // final winner number
     }
 
     mapping(uint => CryptoLotteryState) public cryptoLotteryStates; // game ID => game info
     uint public cryptoLotteryCount = 0;
     mapping(uint => uint) public requestIdToGameId; // request ID => game ID
     mapping(uint => uint) public gameIdToRequestId; // game ID => request ID
-    mapping(uint => RequestStatus) public s_requests; 
+    mapping(uint => RequestStatus) public s_requests;
 
-    IERC20 private immutable receiveToken;
+    // IERC20 private immutable receiveToken;
 
     // VRF variable
     address public vrfCoordinator;
@@ -46,36 +48,30 @@ contract Lottery is Ownable, ReentrancyGuard {
     uint[] public requestIds;
     uint public lastRequestId;
     bytes32 keyHash;
-    uint32 callbackGasLimit = 2500000; // max callback gas limit 
+    uint32 callbackGasLimit = 2500000; // max callback gas limit
     uint16 requestConfirmations = 3;
-    // can customize request id 
+    // can customize request id
     uint64 public constant TRANSFER_REQUEST_ID = 1;
 
     constructor(
-        address _vrfCoordinator, 
-        bytes32 _keyHash, 
-        uint64 _subscriptionId,
-        IERC20 _receiveToken
-    )
-    {
+        address _vrfCoordinator,
+        bytes32 _keyHash,
+        uint64 _subscriptionId
+    ) {
         vrfCoordinator = _vrfCoordinator;
         COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
         keyHash = _keyHash;
         s_subscriptionId = _subscriptionId;
-        receiveToken = _receiveToken;
     }
 
     /***************************/
     /****  Admin Functions  ****/
     /***************************/
 
-    function listLottery(
-        uint priceInUsdt,
-        address tokenAddress,
-        uint amount
-    ) external {
+    function listLottery(address tokenAddress, uint amount) external {
         cryptoLotteryCount++;
         cryptoLotteryStates[cryptoLotteryCount] = CryptoLotteryState(
+            msg.sender,
             bytes32(0),
             0,
             tokenAddress,
@@ -95,42 +91,84 @@ contract Lottery is Ownable, ReentrancyGuard {
         cryptoLotteryStates[lotteryId].drawerAmount = amount;
     }
 
+    function settingMerkleTreeRoot(
+        uint lotteryId,
+        bytes32 merkleRoot
+    ) external {
+        require(
+            msg.sender == cryptoLotteryStates[lotteryId].lotteryOwner,
+            "Only owner can set merkle root"
+        );
+        cryptoLotteryStates[lotteryId].merkkleRoot = merkleRoot;
+    }
+
     /****************************/
     /****  Drawer Functions  ****/
     /****************************/
 
-    function verifyList(uint lotteryId, address drawer, bytes32[] memory proof)
-        external 
-        returns (bool)
-    {
+    function verify(
+        uint lotteryId,
+        address drawer,
+        uint drawerId,
+        bytes32[] calldata proof
+    ) public view returns (bool) {
+        // Verify the Merkle proof
         bytes32 lotteryHash = cryptoLotteryStates[lotteryId].merkkleRoot;
-        bytes32 user = keccak256(abi.encodePacked(drawer));
-        bytes32 computedHash = user;
+        bytes32 userLeaf = keccak256(abi.encode(drawer, drawerId));
+        bool isValid = MerkleProof.verify(proof, lotteryHash, userLeaf);
 
-        for (uint256 i = 0; i < proof.length; i++) {
-            bytes32 proofElement = proof[i];
-
-            if (computedHash <= proofElement) {
-                computedHash = keccak256(
-                    abi.encodePacked(computedHash, proofElement)
-                );
-            } else {
-                computedHash = keccak256(
-                    abi.encodePacked(proofElement, computedHash)
-                );
-            }
-        }
-        return computedHash == lotteryHash;
+        // Return the result
+        return isValid;
     }
+
+    function redeemLotteryPrize(
+        uint lotteryId,
+        address drawer,
+        uint drawerId,
+        bytes32[] calldata proof
+    ) external nonReentrant {
+        require(verify(lotteryId, drawer, drawerId, proof), "Invalid proof");
+        require(
+            cryptoLotteryStates[lotteryId].finalWinnerNumber == drawerId,
+            "You are not the winner"
+        );
+        uint amount = cryptoLotteryStates[lotteryId].amount;
+        address tokenAddress = cryptoLotteryStates[lotteryId].tokenAddress;
+        IERC20(tokenAddress).transfer(drawer, amount);
+    }
+
+    // function verifyList(
+    //     uint lotteryId,
+    //     address drawer,
+    //     bytes32[] memory proof
+    // ) external returns (bool) {
+    //     bytes32 lotteryHash = cryptoLotteryStates[lotteryId].merkkleRoot;
+    //     bytes32 user = keccak256(abi.encodePacked(drawer));
+    //     bytes32 computedHash = user;
+
+    //     for (uint256 i = 0; i < proof.length; i++) {
+    //         bytes32 proofElement = proof[i];
+
+    //         if (computedHash <= proofElement) {
+    //             computedHash = keccak256(
+    //                 abi.encodePacked(computedHash, proofElement)
+    //             );
+    //         } else {
+    //             computedHash = keccak256(
+    //                 abi.encodePacked(proofElement, computedHash)
+    //             );
+    //         }
+    //     }
+    //     return computedHash == lotteryHash;
+    // }
 
     /****************************/
     /***  Internal Functions  ***/
     /****************************/
 
-    function requestRandomWords(uint8 numWords)
-        internal
-        returns (uint requestId)
-    {
+    function requestRandomWords(
+        uint8 numWords
+    ) internal returns (uint requestId) {
         requestId = COORDINATOR.requestRandomWords(
             keyHash,
             s_subscriptionId,
@@ -155,9 +193,11 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(s_requests[_requestId].exists, "request not found");
         s_requests[_requestId].fulfilled = true;
         s_requests[_requestId].randomWords = _randomWords;
-        uint count = cryptoLotteryStates[requestIdToGameId[_requestId]].drawerAmount;
-        cryptoLotteryStates[requestIdToGameId[_requestId]].finalWinnerNumber = 
-            _randomWords[0] % count;
+        uint count = cryptoLotteryStates[requestIdToGameId[_requestId]]
+            .drawerAmount;
+        cryptoLotteryStates[requestIdToGameId[_requestId]].finalWinnerNumber =
+            _randomWords[0] %
+            count;
     }
 
     /**************************/
@@ -176,7 +216,7 @@ contract Lottery is Ownable, ReentrancyGuard {
     //     GameState memory gameState = idToGameState[gameId];
     //     require(s_requests[gameIdToRequestId[gameId]].exists, "Request not found");
     //     require(
-    //         gameState.status == Status.DrawFinalNumber, 
+    //         gameState.status == Status.DrawFinalNumber,
     //         "Final number not draw yet"
     //     );
     //     return gameState.playerList[gameState.finalWinningNumber];
@@ -186,22 +226,29 @@ contract Lottery is Ownable, ReentrancyGuard {
     //     return idToGameState[gameId].playerList;
     // }
 
-    function getBlocktime () external view returns (uint) {
+    function getBlocktime() external view returns (uint) {
         return block.timestamp;
     }
 
     /***************************/
     /***  Utility Functions  ***/
     /***************************/
-    
-    function getReceiveToken() external onlyOwner {
-        uint balanceOfReceiveToken = receiveToken.balanceOf(address(this));
-        receiveToken.transferFrom(address(this), msg.sender, balanceOfReceiveToken);
-    }
 
-    function rawFulfillRandomWords(uint256 requestId, uint256[] memory randomWords) external {
+    // function getReceiveToken() external onlyOwner {
+    //     uint balanceOfReceiveToken = receiveToken.balanceOf(address(this));
+    //     receiveToken.transferFrom(
+    //         address(this),
+    //         msg.sender,
+    //         balanceOfReceiveToken
+    //     );
+    // }
+
+    function rawFulfillRandomWords(
+        uint256 requestId,
+        uint256[] memory randomWords
+    ) external {
         if (msg.sender != vrfCoordinator) {
-        revert OnlyCoordinatorCanFulfill(msg.sender, vrfCoordinator);
+            revert OnlyCoordinatorCanFulfill(msg.sender, vrfCoordinator);
         }
         fulfillRandomWords(requestId, randomWords);
     }

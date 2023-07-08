@@ -1,0 +1,22 @@
+{
+  "name": "zkdraw",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ethereumjs-abi": "^0.6.8",
+    "js-sha3": "^0.8.0",
+    "keccak256": "^1.0.6",
+    "merkletreejs": "^0.3.10",
+    "web3": "^4.0.2"
+  }
+}

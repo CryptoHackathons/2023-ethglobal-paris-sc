@@ -1,0 +1,5 @@
+CounterScript:test(uint256) (runs: 256, μ: 3358, ~: 3358)
+CounterTest:testEmit() (gas: 11297)
+CounterTest:testIncrement() (gas: 28401)
+CounterTest:testRevert() (gas: 8953)
+CounterTest:testSetNumber(uint256) (runs: 256, μ: 27298, ~: 28387)
