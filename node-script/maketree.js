@@ -33,17 +33,27 @@ function testKeccak(_input) {
   const hash = web3.utils.keccak256(
     web3.eth.abi.encodeParameters(["address", "uint256"], [_input, 103])
   );
-  console.log(hash);
+  // console.log(hash);
 }
 
 testKeccak("0x1dB47D1a06Df36f963af1b086B012bb278071372");
 
-const proof = merkleTreeTest.getProof(leafNode[2]);
+const proof = merkleTreeTest.getProof(leafNode[1]);
 
-console.log(JSON.stringify(proof.toString("hex")));
+// console.log(JSON.stringify(proof.toString("hex")));
 console.log(
+  "Proof : ",
   JSON.stringify(
     proof.map((el) => ({ ...el, data: "0x" + el.data.toString("hex") })),
+    null,
+    2
+  )
+);
+
+console.log(
+  "Proof: ",
+  JSON.stringify(
+    proof.map((el) => "0x" + el.data.toString("hex")),
     null,
     2
   )
