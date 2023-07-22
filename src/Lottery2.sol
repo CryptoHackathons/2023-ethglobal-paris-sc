@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.7;
 
-import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@openzeppelin/security/ReentrancyGuard.sol";
 import "@openzeppelin/utils/Strings.sol";
 import "@openzeppelin/access/Ownable.sol";
@@ -9,9 +8,7 @@ import "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/utils/cryptography/MerkleProof.sol";
 import "../adding/verifier.sol";
 
-contract Lottery is Ownable, ReentrancyGuard, Verifier {
-    error OnlyCoordinatorCanFulfill(address have, address want);
-
+contract Lottery2 is Ownable, ReentrancyGuard, Verifier {
     struct RequestStatus {
         bool fulfilled; // whether the request has been successfully fulfilled
         bool exists; // whether a requestId exists
@@ -42,28 +39,10 @@ contract Lottery is Ownable, ReentrancyGuard, Verifier {
 
     // IERC20 private immutable receiveToken;
 
-    // VRF variable
-    address public vrfCoordinator;
-    VRFCoordinatorV2Interface COORDINATOR;
-    uint64 s_subscriptionId;
-    uint[] public requestIds;
-    uint public lastRequestId;
-    bytes32 keyHash;
-    uint32 callbackGasLimit = 2500000; // max callback gas limit
-    uint16 requestConfirmations = 3;
     // can customize request id
     uint64 public constant TRANSFER_REQUEST_ID = 1;
 
-    constructor(
-        address _vrfCoordinator,
-        bytes32 _keyHash,
-        uint64 _subscriptionId
-    ) {
-        vrfCoordinator = _vrfCoordinator;
-        COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
-        keyHash = _keyHash;
-        s_subscriptionId = _subscriptionId;
-    }
+    constructor() {}
 
     /***************************/
     /****  Admin Functions  ****/
@@ -84,12 +63,14 @@ contract Lottery is Ownable, ReentrancyGuard, Verifier {
 
     function closeLotteryAndCallChainlinkCoordinator(
         uint lotteryId,
-        uint amount
+        uint amount,
+        uint randomSeed
     ) external {
-        uint requestId = requestRandomWords(1);
-        requestIdToGameId[requestId] = lotteryId;
-        gameIdToRequestId[lotteryId] = requestId;
+        // uint requestId = requestRandomWords(1);
+        // requestIdToGameId[requestId] = lotteryId;
+        // gameIdToRequestId[lotteryId] = requestId;
         cryptoLotteryStates[lotteryId].drawerAmount = amount;
+        cryptoLotteryStates[lotteryId].finalWinnerNumber = randomSeed % count;
     }
 
     function settingMerkleTreeRoot(
@@ -180,51 +161,51 @@ contract Lottery is Ownable, ReentrancyGuard, Verifier {
     /***  Internal Functions  ***/
     /****************************/
 
-    function requestRandomWords(
-        uint8 numWords
-    ) internal returns (uint requestId) {
-        requestId = COORDINATOR.requestRandomWords(
-            keyHash,
-            s_subscriptionId,
-            requestConfirmations,
-            callbackGasLimit,
-            numWords
-        );
-        s_requests[requestId] = RequestStatus({
-            randomWords: new uint[](0),
-            exists: true,
-            fulfilled: false
-        });
-        requestIds.push(requestId);
-        lastRequestId = requestId;
-        return requestId;
-    }
+    // function requestRandomWords(
+    //     uint8 numWords
+    // ) internal returns (uint requestId) {
+    //     requestId = COORDINATOR.requestRandomWords(
+    //         keyHash,
+    //         s_subscriptionId,
+    //         requestConfirmations,
+    //         callbackGasLimit,
+    //         numWords
+    //     );
+    //     s_requests[requestId] = RequestStatus({
+    //         randomWords: new uint[](0),
+    //         exists: true,
+    //         fulfilled: false
+    //     });
+    //     requestIds.push(requestId);
+    //     lastRequestId = requestId;
+    //     return requestId;
+    // }
 
-    function fulfillRandomWords(
-        uint _requestId,
-        uint[] memory _randomWords
-    ) internal {
-        require(s_requests[_requestId].exists, "request not found");
-        s_requests[_requestId].fulfilled = true;
-        s_requests[_requestId].randomWords = _randomWords;
-        uint count = cryptoLotteryStates[requestIdToGameId[_requestId]]
-            .drawerAmount;
-        cryptoLotteryStates[requestIdToGameId[_requestId]].finalWinnerNumber =
-            _randomWords[0] %
-            count;
-    }
+    // function fulfillRandomWords(
+    //     uint _requestId,
+    //     uint[] memory _randomWords
+    // ) internal {
+    //     require(s_requests[_requestId].exists, "request not found");
+    //     s_requests[_requestId].fulfilled = true;
+    //     s_requests[_requestId].randomWords = _randomWords;
+    //     uint count = cryptoLotteryStates[requestIdToGameId[_requestId]]
+    //         .drawerAmount;
+    //     cryptoLotteryStates[requestIdToGameId[_requestId]].finalWinnerNumber =
+    //         _randomWords[0] %
+    //         count;
+    // }
 
     /**************************/
     /***  Status Functions  ***/
     /**************************/
 
-    function getRequestStatus(
-        uint _requestId
-    ) external view returns (bool fulfilled, uint[] memory randomWords) {
-        require(s_requests[_requestId].exists, "Request not found");
-        RequestStatus memory request = s_requests[_requestId];
-        return (request.fulfilled, request.randomWords);
-    }
+    // function getRequestStatus(
+    //     uint _requestId
+    // ) external view returns (bool fulfilled, uint[] memory randomWords) {
+    //     require(s_requests[_requestId].exists, "Request not found");
+    //     RequestStatus memory request = s_requests[_requestId];
+    //     return (request.fulfilled, request.randomWords);
+    // }
 
     // function getGameFinalWinnerAddress (uint gameId) external view returns (address) {
     //     GameState memory gameState = idToGameState[gameId];
@@ -257,13 +238,13 @@ contract Lottery is Ownable, ReentrancyGuard, Verifier {
     //     );
     // }
 
-    function rawFulfillRandomWords(
-        uint256 requestId,
-        uint256[] memory randomWords
-    ) external {
-        if (msg.sender != vrfCoordinator) {
-            revert OnlyCoordinatorCanFulfill(msg.sender, vrfCoordinator);
-        }
-        fulfillRandomWords(requestId, randomWords);
-    }
+    // function rawFulfillRandomWords(
+    //     uint256 requestId,
+    //     uint256[] memory randomWords
+    // ) external {
+    //     if (msg.sender != vrfCoordinator) {
+    //         revert OnlyCoordinatorCanFulfill(msg.sender, vrfCoordinator);
+    //     }
+    //     fulfillRandomWords(requestId, randomWords);
+    // }
 }
