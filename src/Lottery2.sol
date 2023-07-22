@@ -70,7 +70,7 @@ contract Lottery2 is Ownable, ReentrancyGuard, Verifier {
         // requestIdToGameId[requestId] = lotteryId;
         // gameIdToRequestId[lotteryId] = requestId;
         cryptoLotteryStates[lotteryId].drawerAmount = amount;
-        cryptoLotteryStates[lotteryId].finalWinnerNumber = randomSeed % count;
+        cryptoLotteryStates[lotteryId].finalWinnerNumber = randomSeed % amount;
     }
 
     function settingMerkleTreeRoot(
