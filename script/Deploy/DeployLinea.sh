@@ -7,7 +7,7 @@
 # export PRIVATE_KEY=
 
 forge script script/Lottery2.s.sol 
-  --rpc-url=https://polygon-mumbai.infura.io/v3/ae3b481fe2c34ad9a2569ef2f28c29a6 
+  --rpc-url=$RPC_URL
   --broadcast 
   --sender=0xF16Aa7E201651e7eAd5fDd010a5a14589E220826 
   --private-key=$PRIVATE_KEY 
